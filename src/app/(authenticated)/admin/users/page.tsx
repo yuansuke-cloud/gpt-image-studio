@@ -2,7 +2,7 @@
 // 管理后台 - 用户管理
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { formatDate } from "@/lib/utils";
 
 interface UserItem {
@@ -19,8 +19,10 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 充值弹窗状态
   const [grantUserId, setGrantUserId] = useState<string | null>(null);
@@ -33,7 +35,7 @@ export default function AdminUsersPage() {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: "20",
-        ...(search && { search }),
+        ...(debouncedSearch && { search: debouncedSearch }),
       });
       const res = await fetch(`/api/admin/users?${params}`);
       const data = await res.json();
@@ -46,7 +48,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     fetchUsers();
-  }, [page, search]);
+  }, [page, debouncedSearch]);
 
   const handleGrant = async () => {
     if (!grantUserId || grantAmount <= 0) return;
@@ -75,17 +77,20 @@ export default function AdminUsersPage() {
           placeholder="搜索用户名或邮箱..."
           value={search}
           onChange={(e) => {
-            setSearch(e.target.value);
+            const val = e.target.value;
+            setSearch(val);
             setPage(1);
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => setDebouncedSearch(val), 300);
           }}
           className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm"
         />
       </div>
 
       {/* 用户列表 */}
-      <div className="bg-white rounded-lg border overflow-hidden">
+      <div className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-500">用户</th>
               <th className="text-left px-4 py-3 font-medium text-gray-500">角色</th>
@@ -95,7 +100,7 @@ export default function AdminUsersPage() {
               <th className="text-right px-4 py-3 font-medium text-gray-500">操作</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y dark:divide-gray-800">
             {users.map((user) => (
               <tr key={user.id}>
                 <td className="px-4 py-3">
@@ -160,8 +165,8 @@ export default function AdminUsersPage() {
       {/* 充值弹窗 */}
       {grantUserId && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm">
-            <h3 className="text-lg font-semibold mb-4">充值额度</h3>
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-4 dark:text-gray-100">充值额度</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

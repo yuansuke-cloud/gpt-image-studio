@@ -147,15 +147,6 @@ export async function generateImages(params: GenerateImageParams) {
   throw new Error("图片生成超时，请降低质量档位或减少数量");
 }
 
-export async function editImage(params: GenerateImageParams & { imageBuffer: Buffer }) {
-  if (!hasApiKey) {
-    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
-    return [{ b64_data: generateMockImage(`[Edit] ${params.prompt}`, 0), revised_prompt: `[Mock Edit] ${params.prompt}` }];
-  }
-
-  return generateImages({ ...params, imageUrls: [] });
-}
-
 export function calculateCost(quality: string, size: string, n: number, model: string = "gpt-image-2-official"): number {
   const basePrice = QUALITY_PRICING[model]?.[quality] ?? QUALITY_PRICING["gpt-image-2-official"].medium;
   const sizeKey = size.replace("S_", "").toLowerCase();

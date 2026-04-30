@@ -4,6 +4,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useDropzone } from "react-dropzone";
 import type { GenerateRequest, GenerateResponse, GeneratedImage } from "@/types";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -30,6 +31,7 @@ const POLL_INTERVAL = 1500; // 轮询间隔 ms
 
 export default function GeneratePage() {
   const searchParams = useSearchParams();
+  const { data: session, update: updateSession } = useSession();
 
   // 表单状态
   const [prompt, setPrompt] = useState(searchParams.get("prompt") || "");
@@ -62,7 +64,7 @@ export default function GeneratePage() {
   }, []);
 
   // 轮询生图状态
-  const startPolling = useCallback((generationId: string, creditsUsed: number, creditsRemaining: number) => {
+  const startPolling = useCallback((generationId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(async () => {
@@ -77,6 +79,8 @@ export default function GeneratePage() {
           clearInterval(pollRef.current!);
           pollRef.current = null;
           setGenerating(false);
+          // 刷新 session 获取最新余额
+          updateSession();
           setResult({
             generationId: data.id,
             status: "COMPLETED",
@@ -85,8 +89,8 @@ export default function GeneratePage() {
               url: img.url,
               format: img.format,
             })) || [],
-            creditsUsed,
-            creditsRemaining,
+            creditsUsed: data.costCredits ?? 0,
+            creditsRemaining: 0, // 由 session 提供实时余额
           });
         } else if (data.status === "FAILED") {
           clearInterval(pollRef.current!);
@@ -98,7 +102,7 @@ export default function GeneratePage() {
         // 网络错误时继续轮询
       }
     }, POLL_INTERVAL);
-  }, []);
+  }, [updateSession]);
 
   // 参考图上传
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -130,10 +134,20 @@ export default function GeneratePage() {
     multiple: false,
   });
 
+  // 预估额度
+  const estimatedCost = (QUALITY_OPTIONS.find((q) => q.value === quality)?.credits ?? 2) * n;
+  const currentBalance = session?.user?.creditsBalance ?? 0;
+  const insufficientCredits = currentBalance < estimatedCost;
+
   // 提交生图
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       setError("请输入图片描述");
+      return;
+    }
+
+    if (insufficientCredits) {
+      setError(`额度不足，需要 ${estimatedCost} 额度，当前余额 ${currentBalance}`);
       return;
     }
 
@@ -166,7 +180,7 @@ export default function GeneratePage() {
       }
 
       // API 立即返回，开始轮询
-      startPolling(data.generationId, data.creditsUsed, data.creditsRemaining);
+      startPolling(data.generationId);
     } catch (err: any) {
       setError(err.message);
       setGenerating(false);
@@ -293,19 +307,23 @@ export default function GeneratePage() {
           </div>
 
           {/* 预估消耗 */}
-          <div className="p-4 bg-blue-50 rounded-md">
-            <p className="text-sm text-blue-800">
-              预估消耗：<span className="font-semibold">{(QUALITY_OPTIONS.find((q) => q.value === quality)?.credits ?? 2) * n} 额度</span>
+          <div className={`p-4 rounded-md ${insufficientCredits ? "bg-red-50" : "bg-blue-50"}`}>
+            <p className={`text-sm ${insufficientCredits ? "text-red-800" : "text-blue-800"}`}>
+              预估消耗：<span className="font-semibold">{estimatedCost} 额度</span>
+              <span className="ml-2">（余额 {currentBalance}）</span>
             </p>
+            {insufficientCredits && (
+              <p className="text-xs text-red-600 mt-1">额度不足，请充值后再试</p>
+            )}
           </div>
 
           {/* 生成按钮 */}
           <button
             onClick={handleGenerate}
-            disabled={generating || !prompt.trim()}
+            disabled={generating || !prompt.trim() || insufficientCredits}
             className="w-full rounded-md bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {generating ? "生成中..." : "开始生成"}
+            {generating ? "生成中..." : insufficientCredits ? "额度不足" : "开始生成"}
           </button>
         </div>
 
@@ -318,10 +336,10 @@ export default function GeneratePage() {
           )}
 
           {generating && (
-            <div className="flex items-center justify-center h-64 bg-white rounded-lg border">
+            <div className="flex items-center justify-center h-64 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900 mx-auto mb-4" />
-                <p className="text-gray-500">{statusLabel[generationStatus] || "准备中..."}</p>
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900 dark:border-gray-100 mx-auto mb-4" />
+                <p className="text-gray-500 dark:text-gray-400">{statusLabel[generationStatus] || "准备中..."}</p>
               </div>
             </div>
           )}
@@ -329,13 +347,13 @@ export default function GeneratePage() {
           {result?.images && result.images.length > 0 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500">
-                  消耗 {result.creditsUsed} 额度，剩余 {result.creditsRemaining}
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  消耗 {result.creditsUsed} 额度，剩余 {session?.user?.creditsBalance ?? 0}
                 </p>
               </div>
               <div className={`grid gap-4 ${result.images.length === 1 ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
                 {result.images.map((img) => (
-                  <div key={img.id} className="bg-white rounded-lg border overflow-hidden">
+                  <div key={img.id} className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden">
                     <ImageLightbox src={img.url} alt={prompt}>
                       <img src={img.url} alt={prompt} className="w-full" />
                     </ImageLightbox>
@@ -351,8 +369,8 @@ export default function GeneratePage() {
           )}
 
           {!generating && !result && !error && (
-            <div className="flex items-center justify-center h-64 bg-white rounded-lg border">
-              <p className="text-gray-400">输入描述并点击生成，图片将在这里展示</p>
+            <div className="flex items-center justify-center h-64 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800">
+              <p className="text-gray-400 dark:text-gray-500">输入描述并点击生成，图片将在这里展示</p>
             </div>
           )}
         </div>

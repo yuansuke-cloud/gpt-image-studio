@@ -48,14 +48,14 @@ export default function CreditsPage() {
       <h1 className="text-2xl font-bold">额度管理</h1>
 
       {/* 余额卡片 */}
-      <div className="p-8 bg-white rounded-lg border text-center">
-        <p className="text-sm text-gray-500 mb-2">当前余额</p>
+      <div className="p-8 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 text-center">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">当前余额</p>
         <p className="text-5xl font-bold text-blue-600">{balance}</p>
         <p className="text-sm text-gray-400 mt-2">额度（张）</p>
       </div>
 
       {/* 额度说明 */}
-      <div className="p-4 bg-gray-50 rounded-md text-sm text-gray-600">
+      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-md text-sm text-gray-600 dark:text-gray-300">
         <p className="font-medium mb-2">额度消耗规则：</p>
         <ul className="list-disc list-inside space-y-1">
           <li>低质量：1 额度/张</li>
@@ -68,9 +68,9 @@ export default function CreditsPage() {
       {/* 变动记录 */}
       <div>
         <h2 className="text-lg font-semibold mb-4">变动记录</h2>
-        <div className="bg-white rounded-lg border overflow-hidden">
+        <div className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">
                   时间
@@ -89,7 +89,7 @@ export default function CreditsPage() {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y dark:divide-gray-800">
               {logs.map((log) => (
                 <tr key={log.id}>
                   <td className="px-4 py-3 text-gray-500">

@@ -45,12 +45,12 @@ function LoginForm() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md p-8 bg-white rounded-xl shadow-lg">
-        <h1 className="text-2xl font-bold text-center mb-2">
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="w-full max-w-md p-8 bg-white dark:bg-gray-900 rounded-xl shadow-lg">
+        <h1 className="text-2xl font-bold text-center mb-2 dark:text-gray-100">
           GPT Image Studio
         </h1>
-        <p className="text-gray-500 text-center mb-8">登录以开始使用</p>
+        <p className="text-gray-500 dark:text-gray-400 text-center mb-8">登录以开始使用</p>
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
@@ -94,7 +94,7 @@ function LoginForm() {
                 <button
                   key={provider.id}
                   onClick={() => signIn(provider.id, { callbackUrl: "/dashboard" })}
-                  className="w-full flex items-center justify-center gap-3 rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  className="w-full flex items-center justify-center gap-3 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                 >
                   {getProviderIcon(provider.id)}
                   使用 {provider.name} 登录

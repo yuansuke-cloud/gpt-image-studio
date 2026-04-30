@@ -47,7 +47,7 @@ export default function DashboardPage() {
         </Link>
         <Link
           href="/history"
-          className="inline-flex items-center justify-center rounded-md border border-gray-300 px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="inline-flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
         >
           查看历史
         </Link>
@@ -62,7 +62,7 @@ export default function DashboardPage() {
               gen.images?.map((img: any) => (
                 <div
                   key={img.id}
-                  className="aspect-square rounded-lg overflow-hidden border bg-white"
+                  className="aspect-square rounded-lg overflow-hidden border dark:border-gray-800 bg-white dark:bg-gray-900"
                 >
                   <img
                     src={img.url}
@@ -74,7 +74,7 @@ export default function DashboardPage() {
             )}
           </div>
         ) : (
-          <p className="text-gray-500">还没有生成记录，去生成第一张图吧</p>
+          <p className="text-gray-500 dark:text-gray-400">还没有生成记录，去生成第一张图吧</p>
         )}
       </div>
     </div>
@@ -91,11 +91,11 @@ function StatCard({
   highlight?: boolean;
 }) {
   return (
-    <div className="p-6 bg-white rounded-lg border shadow-sm">
-      <p className="text-sm text-gray-500">{label}</p>
+    <div className="p-6 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 shadow-sm">
+      <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
       <p
         className={`text-3xl font-bold mt-1 ${
-          highlight ? "text-blue-600" : "text-gray-900"
+          highlight ? "text-blue-600" : "text-gray-900 dark:text-gray-100"
         }`}
       >
         {value.toLocaleString()}

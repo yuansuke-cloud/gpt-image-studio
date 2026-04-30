@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadReferenceImage } from "@/lib/storage";
+import { checkRateLimit, apiRateLimit } from "@/lib/rate-limit";
 
 // 允许的图片类型
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -14,6 +15,15 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
+  // 速率限制：每用户每分钟 60 次
+  const rateCheck = await checkRateLimit(apiRateLimit, session.user.id);
+  if (!rateCheck.success) {
+    return NextResponse.json(
+      { error: "上传过于频繁，请稍后再试" },
+      { status: 429 }
+    );
   }
 
   const formData = await req.formData();

@@ -24,9 +24,14 @@ export default withAuth(
       return NextResponse.next();
     }
 
+    // 优先使用平台可信头，Vercel 会设置 x-vercel-forwarded-for
+    // 其次取 x-forwarded-for 最右侧 IP（最后一个代理添加的，较难伪造）
+    const vercelIp = req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
     const forwarded = req.headers.get("x-forwarded-for") || "";
+    const forwardedParts = forwarded.split(",").map((s) => s.trim()).filter(Boolean);
+    const rightmostForwarded = forwardedParts[forwardedParts.length - 1] || "";
     const realIp = req.headers.get("x-real-ip") || "";
-    const ip = forwarded.split(",")[0]?.trim() || realIp || "";
+    const ip = vercelIp || rightmostForwarded || realIp || "";
 
     if (!ip || BYPASS_IPS.includes(ip)) {
       return NextResponse.next();

@@ -1,7 +1,6 @@
 // src/lib/credits.ts
 // 额度管理服务
 import { prisma } from "./prisma";
-import { calculateCredits } from "./openai";
 
 /**
  * 扣除额度（生图成功后调用）
@@ -40,45 +39,6 @@ export async function deductCredits(
     });
 
     return newBalance;
-  });
-}
-
-/**
- * 退还额度（生图失败时调用）
- */
-export async function refundCredits(
-  userId: string,
-  quality: string,
-  n: number,
-  generationId: string
-): Promise<void> {
-  const refund = calculateCredits(quality, n);
-
-  await prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { creditsBalance: true },
-    });
-
-    if (!user) return;
-
-    const newBalance = user.creditsBalance + refund;
-
-    await tx.user.update({
-      where: { id: userId },
-      data: { creditsBalance: newBalance },
-    });
-
-    await tx.creditLog.create({
-      data: {
-        userId,
-        delta: refund,
-        balanceAfter: newBalance,
-        reason: "REFUND",
-        description: `生图失败退还 ${refund} 额度`,
-        generationId,
-      },
-    });
   });
 }
 

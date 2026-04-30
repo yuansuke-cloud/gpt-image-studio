@@ -59,29 +59,32 @@ export const authOptions: NextAuthOptions = {
       : []),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      // JWT 模式下，首次登录时将用户信息写入 token
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role;
+        token.creditsBalance = (user as any).creditsBalance ?? 0;
+      }
+      // 手动刷新 session 时重新查库
+      if (trigger === "update") {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { role: true, creditsBalance: true },
+        });
+        if (dbUser) {
+          token.role = dbUser.role;
+          token.creditsBalance = dbUser.creditsBalance;
+        }
       }
       return token;
     },
     async session({ session, token, user }) {
       if (session.user) {
         if (isDevMode) {
-          // JWT 模式：从 token 获取 id，从数据库获取最新角色和额度
           session.user.id = token.id as string;
-          const dbUser = await prisma.user.findUnique({
-            where: { id: token.id as string },
-            select: { role: true, creditsBalance: true },
-          });
-          if (dbUser) {
-            session.user.role = dbUser.role as any;
-            session.user.creditsBalance = dbUser.creditsBalance;
-          }
+          session.user.role = token.role as any;
+          session.user.creditsBalance = (token.creditsBalance as number) ?? 0;
         } else {
-          // Database 模式：从 user 对象获取
           session.user.id = user.id;
           const dbUser = await prisma.user.findUnique({
             where: { id: user.id },
@@ -100,14 +103,20 @@ export const authOptions: NextAuthOptions = {
     // 新用户注册时赠送初始额度（OAuth 模式）
     async createUser({ user }) {
       const defaultCredits = parseInt(process.env.DEFAULT_USER_CREDITS || "50");
-      await prisma.creditLog.create({
-        data: {
-          userId: user.id,
-          delta: defaultCredits,
-          balanceAfter: defaultCredits,
-          reason: "INITIAL_GRANT",
-          description: "注册赠送额度",
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { creditsBalance: defaultCredits },
+        });
+        await tx.creditLog.create({
+          data: {
+            userId: user.id,
+            delta: defaultCredits,
+            balanceAfter: defaultCredits,
+            reason: "INITIAL_GRANT",
+            description: "注册赠送额度",
+          },
+        });
       });
     },
   },

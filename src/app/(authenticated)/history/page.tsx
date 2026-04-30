@@ -70,7 +70,7 @@ export default function HistoryPage() {
             {items.map((item) => (
               <div
                 key={item.id}
-                className="bg-white rounded-lg border overflow-hidden"
+                className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden"
               >
                 {/* 图片预览 */}
                 {item.images.length > 0 ? (
@@ -84,7 +84,7 @@ export default function HistoryPage() {
                     </div>
                   </ImageLightbox>
                 ) : (
-                  <div className="aspect-square bg-gray-100 flex items-center justify-center">
+                  <div className="aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                     <span className="text-gray-400 text-sm">
                       {statusToLabel(item.status)}
                     </span>
@@ -93,10 +93,10 @@ export default function HistoryPage() {
 
                 {/* 信息 */}
                 <div className="p-4 space-y-2">
-                  <p className="text-sm text-gray-900 line-clamp-2">
+                  <p className="text-sm text-gray-900 dark:text-gray-100 line-clamp-2">
                     {item.prompt}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <span>{qualityToLabel(item.quality)}</span>
                     <span>·</span>
                     <span>{sizeEnumToString(item.size)}</span>

@@ -54,7 +54,17 @@ async function processGeneration(params: {
     }
 
     const cost = calculateCredits(quality, n);
-    await deductCredits(userId, cost, generationId);
+    const newBalance = await deductCredits(userId, cost, generationId);
+
+    if (newBalance === null) {
+      // 额度不足，清理已生成的图片记录并标记失败
+      await prisma.image.deleteMany({ where: { generationId } });
+      await prisma.generation.update({
+        where: { id: generationId },
+        data: { status: "FAILED", error: "额度不足，请充值后重试", costCredits: 0 },
+      });
+      return;
+    }
 
     await prisma.generation.update({
       where: { id: generationId },
@@ -121,8 +131,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "n 必须在 1-4 之间" }, { status: 400 });
     }
 
-    // 5. 创建生图任务记录
+    // 5. 余额预检
     const costCredits = calculateCredits(quality, n);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { creditsBalance: true },
+    });
+    if (!user || user.creditsBalance < costCredits) {
+      return NextResponse.json(
+        { error: `额度不足，需要 ${costCredits} 额度，当前余额 ${user?.creditsBalance ?? 0}` },
+        { status: 400 }
+      );
+    }
+
+    // 6. 创建生图任务记录
     const costUsd = calculateCost(quality, size, n);
 
     const generation = await prisma.generation.create({
@@ -130,7 +152,7 @@ export async function POST(req: NextRequest) {
         userId,
         prompt: prompt.trim(),
         quality: quality.toUpperCase() as any,
-        size: `S_${size.replace("x", "x")}` as any,
+        size: `S_${size}` as any,
         n,
         format: format.toUpperCase() as any,
         background: background.toUpperCase() as any,
@@ -141,7 +163,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 6. 后台异步执行生图（不阻塞响应），完成后再扣额度
+    // 7. 后台异步执行生图（不阻塞响应），完成后再扣额度
     processGeneration({
       generationId: generation.id,
       userId,
@@ -149,7 +171,7 @@ export async function POST(req: NextRequest) {
       quality, size, resolution, n, format, background,
     }).catch(console.error);
 
-    // 7. 立即返回任务 ID，前端轮询状态
+    // 8. 立即返回任务 ID，前端轮询状态
     return NextResponse.json({
       generationId: generation.id,
       status: "PENDING",

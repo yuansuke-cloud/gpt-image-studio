@@ -6,6 +6,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { grantCredits } from "@/lib/credits";
 
+const isDevMode = process.env.DEV_MODE === "true";
+
 // 获取用户列表
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -20,10 +22,18 @@ export async function GET(req: NextRequest) {
 
   const where: any = {};
   if (search) {
-    where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { email: { contains: search, mode: "insensitive" } },
-    ];
+    if (isDevMode) {
+      // SQLite 不支持 mode: "insensitive"，用 contains 即可（SQLite 默认大小写不敏感）
+      where.OR = [
+        { name: { contains: search } },
+        { email: { contains: search } },
+      ];
+    } else {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
   }
 
   const [users, total] = await Promise.all([
