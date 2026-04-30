@@ -1,9 +1,9 @@
 // prisma/seed-users.ts
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, UserRole } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const users = [
+const users: { email: string; name: string; role: UserRole; credits: number }[] = [
   { email: "admin@aiimage.com", name: "Admin 主管理员", role: "ADMIN", credits: 99999 },
   { email: "boss@aiimage.com", name: "Boss 超级管理员", role: "ADMIN", credits: 99999 },
   { email: "designer1@aiimage.com", name: "Designer 张设计师", role: "USER", credits: 200 },
