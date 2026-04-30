@@ -47,3 +47,4 @@ public/uploads/
 # IDE
 .idea/
 .vscode/
+.env*.local
