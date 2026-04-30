@@ -58,13 +58,28 @@ function generateMockImage(prompt: string, index: number): string {
   return Buffer.from(svg).toString("base64");
 }
 
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
 function sizeToAspect(size: string): string {
   const map: Record<string, string> = {
     "1024x1024": "1:1",
     "1024x1536": "2:3",
     "1536x1024": "3:2",
   };
-  return map[size] || "auto";
+  if (map[size]) return map[size];
+
+  // 自定义尺寸：计算宽高比
+  const match = size.match(/^(\d+)x(\d+)$/);
+  if (match) {
+    const w = parseInt(match[1]);
+    const h = parseInt(match[2]);
+    const d = gcd(w, h);
+    return `${w / d}:${h / d}`;
+  }
+
+  return "auto";
 }
 
 export async function generateImages(params: GenerateImageParams) {

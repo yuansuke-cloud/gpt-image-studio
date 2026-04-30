@@ -20,6 +20,7 @@ const SIZE_OPTIONS = [
   { value: "1024x1024", label: "1024×1024", desc: "正方形" },
   { value: "1024x1536", label: "1024×1536", desc: "竖版" },
   { value: "1536x1024", label: "1536×1024", desc: "横版" },
+  { value: "custom", label: "自定义", desc: "输入宽高" },
 ];
 
 const FORMAT_OPTIONS = [
@@ -43,6 +44,8 @@ export default function GeneratePage() {
   const [prompt, setPrompt] = useState(searchParams.get("prompt") || "");
   const [quality, setQuality] = useState("medium");
   const [size, setSize] = useState("1024x1024");
+  const [customWidth, setCustomWidth] = useState(1024);
+  const [customHeight, setCustomHeight] = useState(1024);
   const [n, setN] = useState(1);
   const [format, setFormat] = useState("png");
   const [background, setBackground] = useState("auto");
@@ -206,10 +209,11 @@ export default function GeneratePage() {
     startTimer();
 
     try {
+      const actualSize = size === "custom" ? `${customWidth}x${customHeight}` : size;
       const body: GenerateRequest = {
         prompt: prompt.trim(),
         quality: quality as any,
-        size: size as any,
+        size: actualSize as any,
         n,
         format: format as any,
         background: background as any,
@@ -326,6 +330,31 @@ export default function GeneratePage() {
                 <option key={opt.value} value={opt.value}>{opt.label} ({opt.desc})</option>
               ))}
             </select>
+            {size === "custom" && (
+              <div className="flex gap-2 mt-2 items-center">
+                <input
+                  type="number"
+                  min={256}
+                  max={4096}
+                  step={64}
+                  value={customWidth}
+                  onChange={(e) => setCustomWidth(Math.min(4096, Math.max(256, parseInt(e.target.value) || 1024)))}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                  placeholder="宽"
+                />
+                <span className="text-gray-400 text-sm">×</span>
+                <input
+                  type="number"
+                  min={256}
+                  max={4096}
+                  step={64}
+                  value={customHeight}
+                  onChange={(e) => setCustomHeight(Math.min(4096, Math.max(256, parseInt(e.target.value) || 1024)))}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                  placeholder="高"
+                />
+              </div>
+            )}
           </div>
 
           {/* 数量 */}
