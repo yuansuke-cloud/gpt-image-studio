@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(chmod +x ~/.claude/scripts/statusline.sh)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm install 2>&1 | tail -20)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm install 2>&1 | tail -10)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm run dev:db:generate 2>&1)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm run dev:db:push 2>&1)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm install dotenv-cli --save-dev 2>&1 | tail -5)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm run dev:setup 2>&1)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && timeout 30 npm run dev 2>&1 || true)",
+      "Bash(lsof -ti:3001,3002 2>/dev/null | xargs kill 2>/dev/null; echo \"cleaned\")",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npx tsc --noEmit --pretty 2>&1 | head -30)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npx tsc --noEmit --pretty 2>&1 | grep \"error TS\" | wc -l)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npx tsc --noEmit --pretty 2>&1)",
+      "Bash(cd \"/Users/amos/Desktop/生图模型\" && npm install next-themes 2>&1 | tail -5)"
+    ]
+  }
+}

@@ -1,0 +1,144 @@
+// src/app/(authenticated)/credits/page.tsx
+// 额度管理页面
+"use client";
+
+import { useEffect, useState } from "react";
+import { formatDate } from "@/lib/utils";
+
+interface CreditLogItem {
+  id: string;
+  delta: number;
+  balanceAfter: number;
+  reason: string;
+  description: string | null;
+  createdAt: string;
+}
+
+const REASON_LABELS: Record<string, string> = {
+  INITIAL_GRANT: "注册赠送",
+  ADMIN_GRANT: "管理员充值",
+  GENERATION: "生图消耗",
+  REFUND: "失败退款",
+};
+
+export default function CreditsPage() {
+  const [balance, setBalance] = useState(0);
+  const [logs, setLogs] = useState<CreditLogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    fetch(`/api/credits?page=${page}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setBalance(data.balance);
+        setLogs(data.logs.data);
+        setTotalPages(data.logs.totalPages);
+      })
+      .finally(() => setLoading(false));
+  }, [page]);
+
+  if (loading) {
+    return <div className="text-center py-12 text-gray-500">加载中...</div>;
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">额度管理</h1>
+
+      {/* 余额卡片 */}
+      <div className="p-8 bg-white rounded-lg border text-center">
+        <p className="text-sm text-gray-500 mb-2">当前余额</p>
+        <p className="text-5xl font-bold text-blue-600">{balance}</p>
+        <p className="text-sm text-gray-400 mt-2">额度（张）</p>
+      </div>
+
+      {/* 额度说明 */}
+      <div className="p-4 bg-gray-50 rounded-md text-sm text-gray-600">
+        <p className="font-medium mb-2">额度消耗规则：</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>低质量：1 额度/张</li>
+          <li>中质量：2 额度/张</li>
+          <li>高质量：5 额度/张</li>
+          <li>生图失败自动退还额度</li>
+        </ul>
+      </div>
+
+      {/* 变动记录 */}
+      <div>
+        <h2 className="text-lg font-semibold mb-4">变动记录</h2>
+        <div className="bg-white rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">
+                  时间
+                </th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">
+                  类型
+                </th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">
+                  说明
+                </th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500">
+                  变动
+                </th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500">
+                  余额
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {logs.map((log) => (
+                <tr key={log.id}>
+                  <td className="px-4 py-3 text-gray-500">
+                    {formatDate(log.createdAt)}
+                  </td>
+                  <td className="px-4 py-3">
+                    {REASON_LABELS[log.reason] || log.reason}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {log.description || "-"}
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-right font-medium ${
+                      log.delta > 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {log.delta > 0 ? "+" : ""}
+                    {log.delta}
+                  </td>
+                  <td className="px-4 py-3 text-right">{log.balanceAfter}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 分页 */}
+        {totalPages > 1 && (
+          <div className="flex justify-center gap-2 mt-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 rounded-md border text-sm disabled:opacity-50"
+            >
+              上一页
+            </button>
+            <span className="px-4 py-2 text-sm text-gray-500">
+              {page} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-4 py-2 rounded-md border text-sm disabled:opacity-50"
+            >
+              下一页
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

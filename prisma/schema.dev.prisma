@@ -1,0 +1,166 @@
+// Prisma Schema - GPT Image Studio (SQLite 开发模式)
+// 基于 schema.prisma，移除 PostgreSQL 特有注解
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// 用户表
+// ============================================
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("USER")
+  creditsBalance Int      @default(50)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  generations     Generation[]
+  referenceImages ReferenceImage[]
+  creditLogs      CreditLog[]
+
+  @@map("users")
+}
+
+// ============================================
+// NextAuth 必需表
+// ============================================
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================
+// 生图任务表
+// ============================================
+model Generation {
+  id        String   @id @default(cuid())
+  userId    String
+  prompt    String
+  model     String   @default("gpt-image-1")
+  quality   String   @default("MEDIUM")
+  size      String   @default("S_1024x1024")
+  n         Int      @default(1)
+  format    String   @default("PNG")
+  background String  @default("AUTO")
+  status    String   @default("PENDING")
+  error     String?
+  costCredits Int    @default(0)
+  costUsd     Float  @default(0)
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images Image[]
+
+  referenceImageId String?
+  referenceImage   ReferenceImage? @relation(fields: [referenceImageId], references: [id])
+
+  @@index([userId])
+  @@map("generations")
+}
+
+// ============================================
+// 生成的图片表
+// ============================================
+model Image {
+  id           String   @id @default(cuid())
+  generationId String
+  storageKey   String
+  url          String
+  format       String   @default("png")
+  width        Int?
+  height       Int?
+  fileSize     Int?
+  createdAt    DateTime @default(now())
+
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([generationId])
+  @@map("images")
+}
+
+// ============================================
+// 参考图（用于编辑模式）
+// ============================================
+model ReferenceImage {
+  id         String   @id @default(cuid())
+  userId     String
+  storageKey String
+  url        String
+  filename   String?
+  fileSize   Int?
+  createdAt  DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generations Generation[]
+
+  @@index([userId])
+  @@map("reference_images")
+}
+
+// ============================================
+// 额度变动日志
+// ============================================
+model CreditLog {
+  id           String   @id @default(cuid())
+  userId       String
+  delta        Int
+  balanceAfter Int
+  reason       String
+  description  String?
+  generationId String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("credit_logs")
+}
