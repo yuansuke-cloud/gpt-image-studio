@@ -1,6 +1,6 @@
 // src/lib/storage.ts
 // 存储模块：支持 Cloudflare R2 和本地文件系统
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
 import fs from "fs/promises";
 
@@ -147,4 +147,49 @@ export async function deleteFromStorage(storageKey: string): Promise<void> {
       Key: storageKey,
     })
   );
+}
+
+/**
+ * 从存储读取文件流
+ * @returns { stream, contentType, contentLength } 或 null（文件不存在）
+ */
+export async function getFromStorage(
+  storageKey: string
+): Promise<{ buffer: Buffer; contentType: string } | null> {
+  if (useLocalStorage) {
+    const localPath = path.join(process.cwd(), "public", "uploads", storageKey);
+    try {
+      const buffer = await fs.readFile(localPath);
+      const ext = path.extname(storageKey).slice(1);
+      const contentTypeMap: Record<string, string> = {
+        png: "image/png",
+        jpeg: "image/jpeg",
+        jpg: "image/jpeg",
+        webp: "image/webp",
+      };
+      return {
+        buffer,
+        contentType: contentTypeMap[ext] || "application/octet-stream",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const res = await getR2Client().send(
+      new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: storageKey,
+      })
+    );
+    const bytes = await res.Body?.transformToByteArray();
+    if (!bytes) return null;
+    return {
+      buffer: Buffer.from(bytes),
+      contentType: res.ContentType || "application/octet-stream",
+    };
+  } catch {
+    return null;
+  }
 }

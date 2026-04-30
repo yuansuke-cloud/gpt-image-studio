@@ -2,8 +2,10 @@
 // 额度管理页面
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import useSWR from "swr";
 import { formatDate } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface CreditLogItem {
   id: string;
@@ -22,37 +24,31 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 export default function CreditsPage() {
-  const [balance, setBalance] = useState(0);
-  const [logs, setLogs] = useState<CreditLogItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const { data, isLoading } = useSWR(`/api/credits?page=${page}`);
 
-  useEffect(() => {
-    fetch(`/api/credits?page=${page}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setBalance(data.balance);
-        setLogs(data.logs.data);
-        setTotalPages(data.logs.totalPages);
-      })
-      .finally(() => setLoading(false));
-  }, [page]);
-
-  if (loading) {
-    return <div className="text-center py-12 text-gray-500">加载中...</div>;
-  }
+  const balance = data?.balance ?? 0;
+  const logs: CreditLogItem[] = data?.logs?.data ?? [];
+  const totalPages = data?.logs?.totalPages ?? 1;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">额度管理</h1>
 
       {/* 余额卡片 */}
-      <div className="p-8 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 text-center">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">当前余额</p>
-        <p className="text-5xl font-bold text-blue-600">{balance}</p>
-        <p className="text-sm text-gray-400 mt-2">额度（张）</p>
-      </div>
+      {isLoading ? (
+        <div className="p-8 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 text-center">
+          <Skeleton className="h-4 w-16 mx-auto mb-4" />
+          <Skeleton className="h-12 w-28 mx-auto mb-2" />
+          <Skeleton className="h-4 w-20 mx-auto" />
+        </div>
+      ) : (
+        <div className="p-8 bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">当前余额</p>
+          <p className="text-5xl font-bold text-blue-600">{balance}</p>
+          <p className="text-sm text-gray-400 mt-2">额度（张）</p>
+        </div>
+      )}
 
       {/* 额度说明 */}
       <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-md text-sm text-gray-600 dark:text-gray-300">
@@ -72,46 +68,35 @@ export default function CreditsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">
-                  时间
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">
-                  类型
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">
-                  说明
-                </th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500">
-                  变动
-                </th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500">
-                  余额
-                </th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">时间</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">类型</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">说明</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500">变动</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500">余额</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-gray-800">
-              {logs.map((log) => (
-                <tr key={log.id}>
-                  <td className="px-4 py-3 text-gray-500">
-                    {formatDate(log.createdAt)}
-                  </td>
-                  <td className="px-4 py-3">
-                    {REASON_LABELS[log.reason] || log.reason}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {log.description || "-"}
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right font-medium ${
-                      log.delta > 0 ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    {log.delta > 0 ? "+" : ""}
-                    {log.delta}
-                  </td>
-                  <td className="px-4 py-3 text-right">{log.balanceAfter}</td>
-                </tr>
-              ))}
+              {isLoading
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-10 ml-auto" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-10 ml-auto" /></td>
+                    </tr>
+                  ))
+                : logs.map((log) => (
+                    <tr key={log.id}>
+                      <td className="px-4 py-3 text-gray-500">{formatDate(log.createdAt)}</td>
+                      <td className="px-4 py-3">{REASON_LABELS[log.reason] || log.reason}</td>
+                      <td className="px-4 py-3 text-gray-500">{log.description || "-"}</td>
+                      <td className={`px-4 py-3 text-right font-medium ${log.delta > 0 ? "text-green-600" : "text-red-600"}`}>
+                        {log.delta > 0 ? "+" : ""}{log.delta}
+                      </td>
+                      <td className="px-4 py-3 text-right">{log.balanceAfter}</td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
         </div>

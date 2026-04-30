@@ -10,6 +10,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "oaidalleapiprodscus.blob.core.windows.net",
       },
+      {
+        protocol: "https",
+        hostname: "*.r2.dev",
+      },
     ],
   },
   experimental: {

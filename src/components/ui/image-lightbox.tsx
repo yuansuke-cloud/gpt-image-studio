@@ -9,11 +9,13 @@ import { X, Download } from "lucide-react";
 interface ImageLightboxProps {
   src: string;
   alt?: string;
+  imageId?: string; // 传入后使用 /api/download 代理下载
   children: React.ReactNode; // 触发元素（缩略图）
 }
 
-export function ImageLightbox({ src, alt = "图片", children }: ImageLightboxProps) {
+export function ImageLightbox({ src, alt = "图片", imageId, children }: ImageLightboxProps) {
   const [open, setOpen] = useState(false);
+  const downloadUrl = imageId ? `/api/download/${imageId}` : src;
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -28,10 +30,8 @@ export function ImageLightbox({ src, alt = "图片", children }: ImageLightboxPr
           {/* 顶部操作栏 */}
           <div className="absolute top-4 right-4 flex gap-2 z-10">
             <a
-              href={src}
+              href={downloadUrl}
               download
-              target="_blank"
-              rel="noopener noreferrer"
               className="rounded-full bg-white/10 hover:bg-white/20 p-2 text-white transition-colors"
               onClick={(e) => e.stopPropagation()}
             >

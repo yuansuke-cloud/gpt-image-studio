@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import { useDropzone } from "react-dropzone";
 import type { GenerateRequest, GenerateResponse, GeneratedImage } from "@/types";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { Download } from "lucide-react";
 
 const QUALITY_OPTIONS = [
   { value: "low", label: "低质量", desc: "1 额度/张，速度快", credits: 1 },
@@ -27,7 +28,12 @@ const FORMAT_OPTIONS = [
   { value: "webp", label: "WebP" },
 ];
 
-const POLL_INTERVAL = 1500; // 轮询间隔 ms
+/** 自适应轮询间隔：前 7s 每 1s，7-30s 每 2s，30s+ 每 3s */
+function getNextPollDelay(elapsedMs: number): number {
+  if (elapsedMs < 7000) return 1000;
+  if (elapsedMs < 30000) return 2000;
+  return 3000;
+}
 
 export default function GeneratePage() {
   const searchParams = useSearchParams();
@@ -54,32 +60,58 @@ export default function GeneratePage() {
   const [generationStatus, setGenerationStatus] = useState<string>("");
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showResult, setShowResult] = useState(false);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollStartRef = useRef<number>(0);
 
-  // 清理轮询
+  // 耗时计时器
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 清理轮询和计时器
   useEffect(() => {
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
 
-  // 轮询生图状态
-  const startPolling = useCallback((generationId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
+  // 启动耗时计时器
+  const startTimer = useCallback(() => {
+    setElapsed(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    const start = Date.now();
+    timerRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+  }, []);
 
-    pollRef.current = setInterval(async () => {
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  // 自适应轮询生图状态（setTimeout 链）
+  const startPolling = useCallback((generationId: string) => {
+    if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+    pollStartRef.current = Date.now();
+
+    const poll = async () => {
       try {
         const res = await fetch(`/api/history/${generationId}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          schedulePoll();
+          return;
+        }
         const data = await res.json();
-
         setGenerationStatus(data.status);
 
         if (data.status === "COMPLETED") {
-          clearInterval(pollRef.current!);
-          pollRef.current = null;
+          pollTimeoutRef.current = null;
           setGenerating(false);
-          // 刷新 session 获取最新余额
+          stopTimer();
           updateSession();
           setResult({
             generationId: data.id,
@@ -90,19 +122,33 @@ export default function GeneratePage() {
               format: img.format,
             })) || [],
             creditsUsed: data.costCredits ?? 0,
-            creditsRemaining: 0, // 由 session 提供实时余额
+            creditsRemaining: 0,
           });
+          // 触发入场动画
+          setTimeout(() => setShowResult(true), 50);
+          return;
         } else if (data.status === "FAILED") {
-          clearInterval(pollRef.current!);
-          pollRef.current = null;
+          pollTimeoutRef.current = null;
           setGenerating(false);
+          stopTimer();
           setError(data.error || "生成失败");
+          return;
         }
       } catch {
         // 网络错误时继续轮询
       }
-    }, POLL_INTERVAL);
-  }, [updateSession]);
+      schedulePoll();
+    };
+
+    const schedulePoll = () => {
+      const elapsedMs = Date.now() - pollStartRef.current;
+      const delay = getNextPollDelay(elapsedMs);
+      pollTimeoutRef.current = setTimeout(poll, delay);
+    };
+
+    // 首次立即轮询
+    poll();
+  }, [updateSession, stopTimer]);
 
   // 参考图上传
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -154,7 +200,9 @@ export default function GeneratePage() {
     setGenerating(true);
     setError(null);
     setResult(null);
+    setShowResult(false);
     setGenerationStatus("PENDING");
+    startTimer();
 
     try {
       const body: GenerateRequest = {
@@ -184,6 +232,7 @@ export default function GeneratePage() {
     } catch (err: any) {
       setError(err.message);
       setGenerating(false);
+      stopTimer();
     }
   };
 
@@ -201,7 +250,7 @@ export default function GeneratePage() {
         <div className="lg:col-span-1 space-y-6">
           {/* Prompt 输入 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               图片描述
             </label>
             <textarea
@@ -210,14 +259,14 @@ export default function GeneratePage() {
               placeholder="描述你想要生成的图片..."
               rows={5}
               maxLength={4000}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent resize-none"
             />
             <p className="text-xs text-gray-400 mt-1">{prompt.length}/4000</p>
           </div>
 
           {/* 参考图上传 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               参考图（可选，用于编辑模式）
             </label>
             {referenceImage ? (
@@ -234,7 +283,7 @@ export default function GeneratePage() {
               <div
                 {...getRootProps()}
                 className={`border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors ${
-                  isDragActive ? "border-gray-900 bg-gray-50" : "border-gray-300 hover:border-gray-400"
+                  isDragActive ? "border-gray-900 bg-gray-50 dark:bg-gray-800" : "border-gray-300 dark:border-gray-700 hover:border-gray-400"
                 }`}
               >
                 <input {...getInputProps()} />
@@ -249,13 +298,13 @@ export default function GeneratePage() {
 
           {/* 质量选择 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">质量</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">质量</label>
             <div className="space-y-2">
               {QUALITY_OPTIONS.map((opt) => (
                 <label
                   key={opt.value}
                   className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
-                    quality === opt.value ? "border-gray-900 bg-gray-50" : "border-gray-200 hover:border-gray-300"
+                    quality === opt.value ? "border-gray-900 dark:border-gray-100 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
                   }`}
                 >
                   <input type="radio" name="quality" value={opt.value} checked={quality === opt.value} onChange={(e) => setQuality(e.target.value)} className="sr-only" />
@@ -270,8 +319,8 @@ export default function GeneratePage() {
 
           {/* 尺寸选择 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">尺寸</label>
-            <select value={size} onChange={(e) => setSize(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">尺寸</label>
+            <select value={size} onChange={(e) => setSize(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm">
               {SIZE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label} ({opt.desc})</option>
               ))}
@@ -280,16 +329,16 @@ export default function GeneratePage() {
 
           {/* 数量 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">数量（1-4）</label>
-            <input type="number" min={1} max={4} value={n} onChange={(e) => setN(Math.min(4, Math.max(1, parseInt(e.target.value) || 1)))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">数量（1-4）</label>
+            <input type="number" min={1} max={4} value={n} onChange={(e) => setN(Math.min(4, Math.max(1, parseInt(e.target.value) || 1)))} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm" />
           </div>
 
           {/* 格式 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">格式</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">格式</label>
             <div className="flex gap-2">
               {FORMAT_OPTIONS.map((opt) => (
-                <button key={opt.value} onClick={() => setFormat(opt.value)} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${format === opt.value ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+                <button key={opt.value} onClick={() => setFormat(opt.value)} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${format === opt.value ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900" : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"}`}>
                   {opt.label}
                 </button>
               ))}
@@ -298,8 +347,8 @@ export default function GeneratePage() {
 
           {/* 背景 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">背景</label>
-            <select value={background} onChange={(e) => setBackground(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">背景</label>
+            <select value={background} onChange={(e) => setBackground(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm">
               <option value="auto">自动</option>
               <option value="transparent">透明（仅 PNG/WebP）</option>
               <option value="opaque">不透明</option>
@@ -307,13 +356,13 @@ export default function GeneratePage() {
           </div>
 
           {/* 预估消耗 */}
-          <div className={`p-4 rounded-md ${insufficientCredits ? "bg-red-50" : "bg-blue-50"}`}>
-            <p className={`text-sm ${insufficientCredits ? "text-red-800" : "text-blue-800"}`}>
+          <div className={`p-4 rounded-md ${insufficientCredits ? "bg-red-50 dark:bg-red-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}>
+            <p className={`text-sm ${insufficientCredits ? "text-red-800 dark:text-red-300" : "text-blue-800 dark:text-blue-300"}`}>
               预估消耗：<span className="font-semibold">{estimatedCost} 额度</span>
               <span className="ml-2">（余额 {currentBalance}）</span>
             </p>
             {insufficientCredits && (
-              <p className="text-xs text-red-600 mt-1">额度不足，请充值后再试</p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1">额度不足，请充值后再试</p>
             )}
           </div>
 
@@ -321,7 +370,7 @@ export default function GeneratePage() {
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim() || insufficientCredits}
-            className="w-full rounded-md bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full rounded-md bg-gray-900 dark:bg-gray-100 px-4 py-3 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {generating ? "生成中..." : insufficientCredits ? "额度不足" : "开始生成"}
           </button>
@@ -330,7 +379,7 @@ export default function GeneratePage() {
         {/* 右侧：结果展示 */}
         <div className="lg:col-span-2">
           {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+            <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-red-700 dark:text-red-300 text-sm">
               {error}
             </div>
           )}
@@ -340,25 +389,38 @@ export default function GeneratePage() {
               <div className="text-center">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900 dark:border-gray-100 mx-auto mb-4" />
                 <p className="text-gray-500 dark:text-gray-400">{statusLabel[generationStatus] || "准备中..."}</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                  已等待 {elapsed} 秒
+                </p>
               </div>
             </div>
           )}
 
           {result?.images && result.images.length > 0 && (
-            <div className="space-y-4">
+            <div
+              className={`space-y-4 transition-all duration-500 ease-out ${
+                showResult ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   消耗 {result.creditsUsed} 额度，剩余 {session?.user?.creditsBalance ?? 0}
+                  {elapsed > 0 && <span className="ml-2">（耗时 {elapsed} 秒）</span>}
                 </p>
               </div>
               <div className={`grid gap-4 ${result.images.length === 1 ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
                 {result.images.map((img) => (
                   <div key={img.id} className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden">
-                    <ImageLightbox src={img.url} alt={prompt}>
+                    <ImageLightbox src={img.url} alt={prompt} imageId={img.id}>
                       <img src={img.url} alt={prompt} className="w-full" />
                     </ImageLightbox>
                     <div className="p-3 flex justify-end gap-2">
-                      <a href={img.url} download target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-800">
+                      <a
+                        href={`/api/download/${img.id}`}
+                        download
+                        className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        <Download className="w-4 h-4" />
                         下载
                       </a>
                     </div>

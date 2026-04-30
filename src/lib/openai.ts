@@ -110,8 +110,9 @@ export async function generateImages(params: GenerateImageParams) {
   }
 
   const submitData = await submitRes.json();
-  const taskId = submitData?.data?.id;
-  if (!taskId) throw new Error("提交成功但未获取到 task_id");
+  // apimart 返回格式: { code: 200, data: [{ status: "submitted", task_id: "task_xxx" }] }
+  const taskId = submitData?.data?.[0]?.task_id;
+  if (!taskId) throw new Error(`提交成功但未获取到 task_id, response: ${JSON.stringify(submitData).slice(0, 200)}`);
 
   // 轮询任务结果
   const maxWait = 180_000;
@@ -128,6 +129,7 @@ export async function generateImages(params: GenerateImageParams) {
     if (!pollRes.ok) continue;
 
     const pollData = await pollRes.json();
+    // apimart 返回格式: { code: 200, data: { status: "pending|completed|failed", result: { images: [{ url: ["https://..."] }] } } }
     const status = pollData?.data?.status;
 
     if (status === "completed") {

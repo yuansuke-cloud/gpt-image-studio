@@ -2,11 +2,16 @@
 // 历史记录页面
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { formatDate, qualityToLabel, statusToLabel, sizeEnumToString } from "@/lib/utils";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/use-toast";
+import { Download } from "lucide-react";
 
 interface HistoryItem {
   id: string;
@@ -19,41 +24,69 @@ interface HistoryItem {
   images: { id: string; url: string }[];
 }
 
+interface HistoryResponse {
+  data: HistoryItem[];
+  totalPages: number;
+}
+
 export default function HistoryPage() {
   const router = useRouter();
-  const [items, setItems] = useState<HistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
-  const fetchHistory = async (p: number) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/history?page=${p}&pageSize=12`);
-      const data = await res.json();
-      setItems(data.data);
-      setTotalPages(data.totalPages);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, isLoading, mutate } = useSWR<HistoryResponse>(
+    `/api/history?page=${page}&pageSize=12`
+  );
 
-  useEffect(() => {
-    fetchHistory(page);
-  }, [page]);
+  const items = data?.data ?? [];
+  const totalPages = data?.totalPages ?? 1;
 
   const handleDelete = async (id: string) => {
     if (!confirm("确定删除这条记录？")) return;
-    await fetch(`/api/history/${id}`, { method: "DELETE" });
-    fetchHistory(page);
+
+    // 乐观删除：立即从缓存移除
+    const previousData = data;
+    mutate(
+      {
+        ...data!,
+        data: items.filter((item) => item.id !== id),
+      },
+      false
+    );
+
+    try {
+      const res = await fetch(`/api/history/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("删除失败");
+      // 重新验证以同步服务端状态
+      mutate();
+    } catch {
+      // 回滚
+      mutate(previousData, false);
+      toast({
+        title: "删除失败",
+        description: "请稍后重试",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">历史记录</h1>
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-500">加载中...</div>
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden">
+              <Skeleton className="aspect-square" />
+              <div className="p-4 space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-gray-500 mb-4">还没有生成记录</p>
@@ -70,17 +103,28 @@ export default function HistoryPage() {
             {items.map((item) => (
               <div
                 key={item.id}
-                className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden"
+                className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-800 overflow-hidden transition-opacity"
               >
                 {/* 图片预览 */}
                 {item.images.length > 0 ? (
-                  <ImageLightbox src={item.images[0].url} alt={item.prompt}>
-                    <div className="aspect-square bg-gray-100">
-                      <img
-                        src={item.images[0].url}
-                        alt={item.prompt}
-                        className="w-full h-full object-cover"
-                      />
+                  <ImageLightbox src={item.images[0].url} alt={item.prompt} imageId={item.images[0].id}>
+                    <div className="aspect-square bg-gray-100 relative">
+                      {item.images[0].url.startsWith("/") ? (
+                        <img
+                          src={item.images[0].url}
+                          alt={item.prompt}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Image
+                          src={item.images[0].url}
+                          alt={item.prompt}
+                          fill
+                          sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                          className="object-cover"
+                        />
+                      )}
                     </div>
                   </ImageLightbox>
                 ) : (
@@ -107,7 +151,17 @@ export default function HistoryPage() {
                     <span className="text-xs text-gray-400">
                       {formatDate(item.createdAt)}
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                      {item.images.length > 0 && (
+                        <a
+                          href={`/api/download/${item.images[0].id}`}
+                          download
+                          className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                          title="下载"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                       <button
                         onClick={() => router.push(`/generate?prompt=${encodeURIComponent(item.prompt)}`)}
                         className="text-xs text-blue-500 hover:text-blue-700"
@@ -126,7 +180,6 @@ export default function HistoryPage() {
               </div>
             ))}
           </div>
-
           {/* 分页 */}
           {totalPages > 1 && (
             <div className="flex justify-center gap-2">
