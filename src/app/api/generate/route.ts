@@ -15,6 +15,7 @@ import type { GenerateRequest } from "@/types";
 async function processGeneration(params: {
   generationId: string;
   userId: string;
+  isAdmin: boolean;
   prompt: string;
   quality: string;
   size: string;
@@ -24,7 +25,7 @@ async function processGeneration(params: {
   background: string;
 }) {
   const {
-    generationId, userId, prompt, quality, size,
+    generationId, userId, isAdmin, prompt, quality, size,
     resolution, n, format, background,
   } = params;
 
@@ -54,22 +55,31 @@ async function processGeneration(params: {
     }
 
     const cost = calculateCredits(quality, n);
-    const newBalance = await deductCredits(userId, cost, generationId);
 
-    if (newBalance === null) {
-      // 额度不足，清理已生成的图片记录并标记失败
-      await prisma.image.deleteMany({ where: { generationId } });
+    if (isAdmin) {
+      // 管理员不扣额度，直接标记完成
       await prisma.generation.update({
         where: { id: generationId },
-        data: { status: "FAILED", error: "额度不足，请充值后重试", costCredits: 0 },
+        data: { status: "COMPLETED", completedAt: new Date(), costCredits: 0 },
       });
-      return;
-    }
+    } else {
+      const newBalance = await deductCredits(userId, cost, generationId);
 
-    await prisma.generation.update({
-      where: { id: generationId },
-      data: { status: "COMPLETED", completedAt: new Date(), costCredits: cost },
-    });
+      if (newBalance === null) {
+        // 额度不足，清理已生成的图片记录并标记失败
+        await prisma.image.deleteMany({ where: { generationId } });
+        await prisma.generation.update({
+          where: { id: generationId },
+          data: { status: "FAILED", error: "额度不足，请充值后重试", costCredits: 0 },
+        });
+        return;
+      }
+
+      await prisma.generation.update({
+        where: { id: generationId },
+        data: { status: "COMPLETED", completedAt: new Date(), costCredits: cost },
+      });
+    }
   } catch (err: any) {
     console.error("Background generation failed:", err);
 
@@ -97,6 +107,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
     const userId = session.user.id;
+    const isAdmin = session.user.role === "ADMIN";
 
     // 2. 速率限制
     const rateCheck = await checkRateLimit(generateRateLimit, userId);
@@ -131,17 +142,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "n 必须在 1-4 之间" }, { status: 400 });
     }
 
-    // 5. 余额预检
+    // 5. 余额预检（管理员跳过）
     const costCredits = calculateCredits(quality, n);
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { creditsBalance: true },
-    });
-    if (!user || user.creditsBalance < costCredits) {
-      return NextResponse.json(
-        { error: `额度不足，需要 ${costCredits} 额度，当前余额 ${user?.creditsBalance ?? 0}` },
-        { status: 400 }
-      );
+    if (!isAdmin) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { creditsBalance: true },
+      });
+      if (!user || user.creditsBalance < costCredits) {
+        return NextResponse.json(
+          { error: `额度不足，需要 ${costCredits} 额度，当前余额 ${user?.creditsBalance ?? 0}` },
+          { status: 400 }
+        );
+      }
     }
 
     // 6. 创建生图任务记录
@@ -167,6 +180,7 @@ export async function POST(req: NextRequest) {
     processGeneration({
       generationId: generation.id,
       userId,
+      isAdmin,
       prompt: prompt.trim(),
       quality, size, resolution, n, format, background,
     }).catch(console.error);

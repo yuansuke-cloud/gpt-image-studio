@@ -183,7 +183,8 @@ export default function GeneratePage() {
   // 预估额度
   const estimatedCost = (QUALITY_OPTIONS.find((q) => q.value === quality)?.credits ?? 2) * n;
   const currentBalance = session?.user?.creditsBalance ?? 0;
-  const insufficientCredits = currentBalance < estimatedCost;
+  const isAdmin = session?.user?.role === "ADMIN";
+  const insufficientCredits = !isAdmin && currentBalance < estimatedCost;
 
   // 提交生图
   const handleGenerate = async () => {
