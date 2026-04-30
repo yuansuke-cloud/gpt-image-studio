@@ -14,7 +14,7 @@ export interface GenerateRequest {
   n?: number;
   format?: "png" | "jpeg" | "webp";
   background?: "auto" | "transparent" | "opaque";
-  referenceImageId?: string;
+  referenceImageIds?: string[];
 }
 
 /** 生图响应 */

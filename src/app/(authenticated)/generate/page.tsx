@@ -50,12 +50,13 @@ export default function GeneratePage() {
   const [format, setFormat] = useState("png");
   const [background, setBackground] = useState("auto");
 
-  // 参考图
-  const [referenceImage, setReferenceImage] = useState<{
+  // 参考图（最多 5 张）
+  const MAX_REF_IMAGES = 5;
+  const [referenceImages, setReferenceImages] = useState<{
     id: string;
     url: string;
     filename: string;
-  } | null>(null);
+  }[]>([]);
   const [uploading, setUploading] = useState(false);
 
   // 生成状态
@@ -153,34 +154,53 @@ export default function GeneratePage() {
     poll();
   }, [updateSession, stopTimer]);
 
-  // 参考图上传
+  // 参考图上传（支持多选，最多 MAX_REF_IMAGES 张）
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
+    setError(null);
+    const remaining = MAX_REF_IMAGES - referenceImages.length;
+    if (remaining <= 0) {
+      setError(`最多上传 ${MAX_REF_IMAGES} 张参考图`);
+      return;
+    }
+    const files = acceptedFiles.slice(0, remaining);
+    if (files.length === 0) return;
 
     setUploading(true);
+    const newImages: { id: string; url: string; filename: string }[] = [];
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (!res.ok) {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "上传失败");
+        }
         const data = await res.json();
-        throw new Error(data.error || "上传失败");
+        newImages.push(data);
       }
-      const data = await res.json();
-      setReferenceImage(data);
+      setReferenceImages((prev) => [...prev, ...newImages]);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setUploading(false);
     }
+  }, [referenceImages.length]);
+
+  const removeReferenceImage = useCallback((id: string) => {
+    setReferenceImages((prev) => prev.filter((img) => img.id !== id));
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { open, getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected: (rejected) => {
+      const msg = rejected[0]?.errors[0]?.message || "格式或大小不符";
+      setError(`文件被拒绝：${msg}`);
+    },
     accept: { "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"] },
     maxSize: 10 * 1024 * 1024,
-    multiple: false,
+    multiple: true,
+    noClick: true,
   });
 
   // 预估额度
@@ -217,7 +237,7 @@ export default function GeneratePage() {
         n,
         format: format as any,
         background: background as any,
-        referenceImageId: referenceImage?.id,
+        referenceImageIds: referenceImages.map((img) => img.id),
       };
 
       const res = await fetch("/api/generate", {
@@ -269,35 +289,63 @@ export default function GeneratePage() {
             <p className="text-xs text-gray-400 mt-1">{prompt.length}/4000</p>
           </div>
 
-          {/* 参考图上传 */}
+          {/* 参考图上传（最多 5 张） */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              参考图（可选，用于编辑模式）
+              参考图（可选，最多 {MAX_REF_IMAGES} 张）
             </label>
-            {referenceImage ? (
-              <div className="relative">
-                <img src={referenceImage.url} alt="参考图" className="w-full rounded-md border" />
-                <button
-                  onClick={() => setReferenceImage(null)}
-                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
-                >
-                  ×
-                </button>
+            <div
+              {...getRootProps()}
+              className={`rounded-md transition-colors ${isDragActive ? "ring-2 ring-gray-400 ring-offset-2 bg-gray-50 dark:bg-gray-800/50" : ""}`}
+            >
+              <input {...getInputProps()} />
+              <div className="grid grid-cols-5 gap-2">
+                {Array.from({ length: MAX_REF_IMAGES }, (_, i) => {
+                  const img = referenceImages[i];
+                  if (img) {
+                    return (
+                      <div key={img.id} className="relative aspect-square">
+                        <img
+                          src={img.url}
+                          alt={img.filename}
+                          className="w-full h-full object-cover rounded-md border dark:border-gray-700"
+                        />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeReferenceImage(img.id); }}
+                          className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={`slot-${i}`}
+                      onClick={(e) => { e.stopPropagation(); if (!uploading) open(); }}
+                      className={`aspect-square border-2 border-dashed rounded-md flex items-center justify-center transition-colors ${
+                        uploading
+                          ? "border-gray-200 dark:border-gray-800 opacity-50 cursor-not-allowed"
+                          : "border-gray-300 dark:border-gray-700 hover:border-gray-500 dark:hover:border-gray-400 cursor-pointer"
+                      }`}
+                    >
+                      {uploading && i === referenceImages.length ? (
+                        <span className="text-xs text-gray-400">...</span>
+                      ) : (
+                        <span className="text-lg text-gray-400">+</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            ) : (
-              <div
-                {...getRootProps()}
-                className={`border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors ${
-                  isDragActive ? "border-gray-900 bg-gray-50 dark:bg-gray-800" : "border-gray-300 dark:border-gray-700 hover:border-gray-400"
-                }`}
-              >
-                <input {...getInputProps()} />
-                {uploading ? (
-                  <p className="text-sm text-gray-500">上传中...</p>
-                ) : (
-                  <p className="text-sm text-gray-500">拖拽图片到此处，或点击选择</p>
-                )}
-              </div>
+              {isDragActive && (
+                <p className="text-xs text-gray-500 mt-1 text-center">松开以上传</p>
+              )}
+            </div>
+            {referenceImages.length > 0 && (
+              <p className="text-xs text-gray-400 mt-1">
+                已上传 {referenceImages.length}/{MAX_REF_IMAGES} 张
+              </p>
             )}
           </div>
 

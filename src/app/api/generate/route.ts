@@ -23,10 +23,11 @@ async function processGeneration(params: {
   n: number;
   format: string;
   background: string;
+  referenceImageIds?: string[];
 }) {
   const {
     generationId, userId, isAdmin, prompt, quality, size,
-    resolution, n, format, background,
+    resolution, n, format, background, referenceImageIds,
   } = params;
 
   try {
@@ -34,6 +35,16 @@ async function processGeneration(params: {
       where: { id: generationId },
       data: { status: "PROCESSING" },
     });
+
+    // 如果有参考图，获取图片 URL
+    let imageUrls: string[] | undefined;
+    if (referenceImageIds?.length) {
+      const refImages = await prisma.referenceImage.findMany({
+        where: { id: { in: referenceImageIds }, userId },
+        select: { url: true },
+      });
+      imageUrls = refImages.map((r) => r.url);
+    }
 
     const results = await generateImages({
       prompt,
@@ -43,6 +54,7 @@ async function processGeneration(params: {
       n,
       format: format as any,
       background: background as any,
+      imageUrls,
     });
 
     for (const result of results) {
@@ -128,7 +140,7 @@ export async function POST(req: NextRequest) {
       n = 1,
       format = "png",
       background = "auto",
-      referenceImageId,
+      referenceImageIds,
     } = body;
 
     // 4. 参数校验
@@ -157,6 +169,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 5.5 校验参考图（最多 5 张，且必须属于当前用户）
+    let validatedRefImageIds: string[] | undefined;
+    if (referenceImageIds?.length) {
+      if (referenceImageIds.length > 5) {
+        return NextResponse.json({ error: "参考图最多 5 张" }, { status: 400 });
+      }
+      const validRefImages = await prisma.referenceImage.findMany({
+        where: { id: { in: referenceImageIds }, userId },
+        select: { id: true },
+      });
+      if (validRefImages.length !== referenceImageIds.length) {
+        return NextResponse.json({ error: "包含无效的参考图" }, { status: 400 });
+      }
+      validatedRefImageIds = validRefImages.map((r) => r.id);
+    }
+
     // 6. 创建生图任务记录
     const costUsd = calculateCost(quality, size, n);
 
@@ -172,7 +200,9 @@ export async function POST(req: NextRequest) {
         status: "PENDING",
         costCredits: 0,
         costUsd,
-        referenceImageId: referenceImageId || null,
+        referenceImages: validatedRefImageIds?.length
+          ? { connect: validatedRefImageIds.map((id) => ({ id })) }
+          : undefined,
       },
     });
 
@@ -183,6 +213,7 @@ export async function POST(req: NextRequest) {
       isAdmin,
       prompt: prompt.trim(),
       quality, size, resolution, n, format, background,
+      referenceImageIds: validatedRefImageIds,
     }).catch(console.error);
 
     // 8. 立即返回任务 ID，前端轮询状态

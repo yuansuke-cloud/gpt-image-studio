@@ -107,9 +107,8 @@ model Generation {
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   images Image[]
 
-  // 参考图关联（编辑模式）
-  referenceImageId String?
-  referenceImage   ReferenceImage? @relation(fields: [referenceImageId], references: [id])
+  // 参考图关联（多张，最多 5 张）
+  referenceImages ReferenceImage[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("generations")
