@@ -9,11 +9,12 @@
 export interface GenerateRequest {
   prompt: string;
   quality?: "low" | "medium" | "high" | "auto";
-  size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
+  size?: string;
+  resolution?: "1k" | "2k" | "4k";
   n?: number;
   format?: "png" | "jpeg" | "webp";
   background?: "auto" | "transparent" | "opaque";
-  referenceImageId?: string; // 编辑模式：参考图 ID
+  referenceImageId?: string;
 }
 
 /** 生图响应 */

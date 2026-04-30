@@ -21,6 +21,7 @@ async function processGeneration(params: {
   prompt: string;
   quality: string;
   size: string;
+  resolution: string;
   n: number;
   format: string;
   background: string;
@@ -28,7 +29,7 @@ async function processGeneration(params: {
 }) {
   const {
     generationId, userId, prompt, quality, size,
-    n, format, background, referenceImageId,
+    resolution, n, format, background, referenceImageId,
   } = params;
 
   try {
@@ -37,49 +38,21 @@ async function processGeneration(params: {
       data: { status: "PROCESSING" },
     });
 
-    let results;
-    if (referenceImageId) {
-      const refImage = await prisma.referenceImage.findUnique({
-        where: { id: referenceImageId },
-      });
-      if (!refImage) throw new Error("参考图不存在");
+    const results = await generateImages({
+      prompt,
+      quality: quality as any,
+      size: size as any,
+      resolution: resolution as any,
+      n,
+      format: format as any,
+      background: background as any,
+    });
 
-      let refBuffer: Buffer;
-      if (refImage.url.startsWith("/uploads/")) {
-        const localPath = path.join(process.cwd(), "public", refImage.url);
-        refBuffer = await fsPromises.readFile(localPath);
-      } else {
-        const refResponse = await fetch(refImage.url);
-        refBuffer = Buffer.from(await refResponse.arrayBuffer());
-      }
-
-      results = await editImage({
-        prompt,
-        imageBuffer: refBuffer,
-        quality: quality as any,
-        size: size as any,
-        format: format as any,
-      });
-    } else {
-      results = await generateImages({
-        prompt,
-        quality: quality as any,
-        size: size as any,
-        n,
-        format: format as any,
-        background: background as any,
-      });
-    }
-
-    // 上传图片并保存记录
     for (const result of results) {
-      if (result.b64_data) {
-        const { storageKey, url } = await uploadBase64Image(result.b64_data, {
-          userId,
-          format,
-        });
+      const imageUrl = result.url || "";
+      if (imageUrl) {
         await prisma.image.create({
-          data: { generationId, storageKey, url, format },
+          data: { generationId, storageKey: imageUrl, url: imageUrl, format },
         });
       }
     }
@@ -132,6 +105,7 @@ export async function POST(req: NextRequest) {
       prompt,
       quality = "medium",
       size = "1024x1024",
+      resolution = "1k",
       n = 1,
       format = "png",
       background = "auto",
@@ -187,7 +161,7 @@ export async function POST(req: NextRequest) {
       generationId: generation.id,
       userId,
       prompt: prompt.trim(),
-      quality, size, n, format, background,
+      quality, size, resolution, n, format, background,
       referenceImageId,
     }).catch(console.error);
 

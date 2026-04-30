@@ -1,16 +1,16 @@
-// src/lib/openai.ts
-// OpenAI 客户端封装 - GPT Image 生成
 import OpenAI from "openai";
 
-const hasApiKey = !!process.env.OPENAI_API_KEY;
+const API_BASE_URL = process.env.OPENAI_API_BASE_URL || "https://api.apimart.ai";
+const API_KEY = process.env.OPENAI_API_KEY || "";
+
+const hasApiKey = !!API_KEY;
 
 export const openai = hasApiKey
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  ? new OpenAI({ apiKey: API_KEY, baseURL: `${API_BASE_URL}/v1` })
   : (null as unknown as OpenAI);
 
-// 质量档位对应的单价（美元，基于 1024x1024）
-export const QUALITY_PRICING: Record<string, Record<string, number>> = {
-  "gpt-image-1": {
+const QUALITY_PRICING: Record<string, Record<string, number>> = {
+  "gpt-image-2-official": {
     low: 0.011,
     medium: 0.042,
     high: 0.167,
@@ -18,7 +18,6 @@ export const QUALITY_PRICING: Record<string, Record<string, number>> = {
   },
 };
 
-// 尺寸对应的价格倍率
 export const SIZE_MULTIPLIER: Record<string, number> = {
   "1024x1024": 1,
   "1024x1536": 1.5,
@@ -26,7 +25,6 @@ export const SIZE_MULTIPLIER: Record<string, number> = {
   auto: 1,
 };
 
-// 质量档位对应的额度消耗（张数）
 export const QUALITY_CREDITS: Record<string, number> = {
   low: 1,
   medium: 2,
@@ -37,135 +35,134 @@ export const QUALITY_CREDITS: Record<string, number> = {
 export type GenerateImageParams = {
   prompt: string;
   quality?: "low" | "medium" | "high" | "auto";
-  size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
+  size?: string;
+  resolution?: "1k" | "2k" | "4k";
   n?: number;
   format?: "png" | "jpeg" | "webp";
   background?: "auto" | "transparent" | "opaque";
+  imageUrls?: string[];
+  maskUrl?: string;
 };
 
-/**
- * 生成 Mock 占位图 SVG（base64 编码）
- */
 function generateMockImage(prompt: string, index: number): string {
   const colors = ["#6366f1", "#ec4899", "#f59e0b", "#10b981"];
   const bg = colors[index % colors.length];
-  const truncatedPrompt =
-    prompt.length > 60 ? prompt.slice(0, 57) + "..." : prompt;
-
-  // 将特殊字符转义用于 SVG
-  const safePrompt = truncatedPrompt
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
+  const truncatedPrompt = prompt.length > 60 ? prompt.slice(0, 57) + "..." : prompt;
+  const safePrompt = truncatedPrompt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="${bg}" rx="16"/>
   <text x="512" y="420" text-anchor="middle" fill="white" font-size="48" font-family="sans-serif" font-weight="bold">Mock Image #${index + 1}</text>
   <text x="512" y="500" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="28" font-family="sans-serif">${safePrompt}</text>
-  <text x="512" y="620" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="24" font-family="sans-serif">DEV MODE - No OpenAI API Key</text>
+  <text x="512" y="620" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="24" font-family="sans-serif">DEV MODE - No API Key</text>
 </svg>`;
-
   return Buffer.from(svg).toString("base64");
 }
 
-/**
- * 调用 OpenAI 生成图片
- * 返回 base64 编码的图片数据数组
- */
+function sizeToAspect(size: string): string {
+  const map: Record<string, string> = {
+    "1024x1024": "1:1",
+    "1024x1536": "2:3",
+    "1536x1024": "3:2",
+  };
+  return map[size] || "auto";
+}
+
 export async function generateImages(params: GenerateImageParams) {
-  const {
-    prompt,
-    quality = "medium",
-    size = "1024x1024",
-    n = 1,
-    format = "png",
-    background = "auto",
-  } = params;
+  const { prompt, quality = "medium", size, resolution = "1k", n = 1, format = "png", background = "auto", imageUrls, maskUrl } = params;
 
-  // Mock 模式：无 API Key 时返回占位图
   if (!hasApiKey) {
     await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
-    return Array.from({ length: n }, (_, i) => ({
-      b64_data: generateMockImage(prompt, i),
-      revised_prompt: `[Mock] ${prompt}`,
-    }));
+    return Array.from({ length: n }, (_, i) => ({ b64_data: generateMockImage(prompt, i), revised_prompt: `[Mock] ${prompt}` }));
   }
 
-  const response = await openai.images.generate({
-    model: "gpt-image-1",
+  const aspect = sizeToAspect(size || "1024x1024");
+
+  const body: Record<string, any> = {
+    model: "gpt-image-2-official",
     prompt,
     quality,
-    size,
     n,
-    // @ts-ignore output_format 在新版 SDK 中可能还没有类型
-    output_format: format === "png" ? "png" : format === "webp" ? "webp" : "jpeg",
+    output_format: format,
     background,
+    resolution,
+  };
+
+  if (aspect && aspect !== "auto") body.size = aspect;
+  else body.size = "auto";
+
+  if (imageUrls?.length) body.image_urls = imageUrls;
+  if (maskUrl) body.mask_url = maskUrl;
+
+  const submitRes = await fetch(`${API_BASE_URL}/v1/images/generations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+    body: JSON.stringify(body),
   });
 
-  return response.data!.map((img) => ({
-    b64_data: img.b64_json,
-    revised_prompt: img.revised_prompt,
-  }));
-}
-
-/**
- * 调用 OpenAI 编辑图片（基于参考图）
- */
-export async function editImage(params: {
-  prompt: string;
-  imageBuffer: Buffer;
-  quality?: "low" | "medium" | "high" | "auto";
-  size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
-  format?: "png" | "jpeg" | "webp";
-}) {
-  const { prompt, imageBuffer, quality = "medium", size = "1024x1024", format = "png" } = params;
-
-  // Mock 模式
-  if (!hasApiKey) {
-    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
-    return [
-      {
-        b64_data: generateMockImage(`[Edit] ${prompt}`, 0),
-        revised_prompt: `[Mock Edit] ${prompt}`,
-      },
-    ];
+  if (!submitRes.ok) {
+    const errBody = await submitRes.text();
+    let errMsg = "图片生成请求失败";
+    try {
+      const parsed = JSON.parse(errBody);
+      errMsg = parsed.message || parsed.error?.message || errMsg;
+    } catch {}
+    throw new Error(errMsg);
   }
 
-  const file = new File([new Uint8Array(imageBuffer)], "reference.png", { type: "image/png" });
+  const submitData = await submitRes.json();
+  const taskId = submitData?.data?.id;
+  if (!taskId) throw new Error("提交成功但未获取到 task_id");
 
-  const response = await openai.images.edit({
-    model: "gpt-image-1",
-    prompt,
-    image: file,
-    quality,
-    size,
-  });
+  // 轮询任务结果
+  const maxWait = 180_000;
+  const pollInterval = 3000;
+  const startTime = Date.now();
 
-  return response.data!.map((img) => ({
-    b64_data: img.b64_json,
-    revised_prompt: img.revised_prompt,
-  }));
+  while (Date.now() - startTime < maxWait) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+
+    const pollRes = await fetch(`${API_BASE_URL}/v1/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    if (!pollRes.ok) continue;
+
+    const pollData = await pollRes.json();
+    const status = pollData?.data?.status;
+
+    if (status === "completed") {
+      const images = pollData.data.result?.images || [];
+      return images.map((img: any) => ({
+        b64_data: "",
+        url: img.url?.[0] || "",
+        revised_prompt: prompt,
+      }));
+    }
+
+    if (status === "failed") {
+      throw new Error(pollData.data?.error || "图片生成失败");
+    }
+  }
+
+  throw new Error("图片生成超时，请降低质量档位或减少数量");
 }
 
-/**
- * 计算本次生图的美元成本
- */
-export function calculateCost(
-  quality: string,
-  size: string,
-  n: number,
-  model: string = "gpt-image-1"
-): number {
-  const basePrice = QUALITY_PRICING[model]?.[quality] ?? QUALITY_PRICING["gpt-image-1"].medium;
+export async function editImage(params: GenerateImageParams & { imageBuffer: Buffer }) {
+  if (!hasApiKey) {
+    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
+    return [{ b64_data: generateMockImage(`[Edit] ${params.prompt}`, 0), revised_prompt: `[Mock Edit] ${params.prompt}` }];
+  }
+
+  return generateImages({ ...params, imageUrls: [] });
+}
+
+export function calculateCost(quality: string, size: string, n: number, model: string = "gpt-image-2-official"): number {
+  const basePrice = QUALITY_PRICING[model]?.[quality] ?? QUALITY_PRICING["gpt-image-2-official"].medium;
   const sizeKey = size.replace("S_", "").toLowerCase();
   const multiplier = SIZE_MULTIPLIER[sizeKey] ?? 1;
   return basePrice * multiplier * n;
 }
 
-/**
- * 计算本次生图的额度消耗
- */
 export function calculateCredits(quality: string, n: number): number {
   const perImage = QUALITY_CREDITS[quality] ?? QUALITY_CREDITS.medium;
   return perImage * n;
