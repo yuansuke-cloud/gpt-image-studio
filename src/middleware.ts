@@ -1,16 +1,38 @@
-// src/middleware.ts
-// Next.js 中间件：认证保护 + API 限速
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
+function ip4ToInt(ip: string): number {
+  return ip.split(".").reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
+}
+
+function ipInCidr(ip: string, cidr: string): boolean {
+  const [rangeIp, bits] = cidr.split("/");
+  const mask = ~(2 ** (32 - parseInt(bits)) - 1);
+  return (ip4ToInt(ip) & mask) === (ip4ToInt(rangeIp) & mask);
+}
+
+const ALLOWED_CIDRS = ["192.168.2.0/24", "192.168.3.0/24"];
+
 export default withAuth(
   function middleware(req) {
-    // 管理后台路由：仅 ADMIN 可访问
-    if (req.nextUrl.pathname.startsWith("/admin")) {
-      if (req.nextauth.token?.role !== "ADMIN") {
-        return NextResponse.redirect(new URL("/dashboard", req.url));
-      }
+    const token = req.nextauth.token;
+    const path = req.nextUrl.pathname;
+
+    if (token?.role === "ADMIN") {
+      return NextResponse.next();
     }
+
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || req.headers.get("x-real-ip")
+      || "0.0.0.0";
+
+    const allowed = ALLOWED_CIDRS.some((cidr) => ipInCidr(ip, cidr));
+    if (!allowed) {
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("error", "ip_restricted");
+      return NextResponse.redirect(loginUrl);
+    }
+
     return NextResponse.next();
   },
   {
@@ -20,7 +42,6 @@ export default withAuth(
   }
 );
 
-// 需要认证的路由
 export const config = {
   matcher: [
     "/dashboard/:path*",

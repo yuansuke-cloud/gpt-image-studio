@@ -20,36 +20,13 @@ export const authOptions: NextAuthOptions = {
             credentials: {
               email: { label: "邮箱", type: "email", placeholder: "admin@local.test" },
             },
-            async authorize(credentials) {
+            async authorize(credentials, req) {
               if (!credentials?.email) return null;
               const email = credentials.email.trim().toLowerCase();
 
-              // 查找或创建用户
-              let user = await prisma.user.findUnique({ where: { email } });
+              const user = await prisma.user.findUnique({ where: { email } });
               if (!user) {
-                const defaultCredits = parseInt(process.env.DEFAULT_USER_CREDITS || "50");
-                const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase());
-                const isAdmin = adminEmails.includes(email);
-
-                user = await prisma.user.create({
-                  data: {
-                    email,
-                    name: email.split("@")[0],
-                    role: isAdmin ? "ADMIN" : "USER",
-                    creditsBalance: defaultCredits,
-                  },
-                });
-
-                // 记录初始额度
-                await prisma.creditLog.create({
-                  data: {
-                    userId: user.id,
-                    delta: defaultCredits,
-                    balanceAfter: defaultCredits,
-                    reason: "INITIAL_GRANT",
-                    description: "注册赠送额度",
-                  },
-                });
+                throw new Error("邮箱未注册，请联系管理员");
               }
 
               return {

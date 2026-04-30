@@ -54,7 +54,7 @@ function LoginForm() {
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-            登录失败，请重试
+            {error === "ip_restricted" ? "当前 IP 不在允许的网段内" : error === "CredentialsSignin" ? "邮箱未注册，请联系管理员" : "登录失败，请重试"}
           </div>
         )}
 
@@ -67,7 +67,7 @@ function LoginForm() {
                   <form key="credentials" onSubmit={handleCredentialsLogin} className="space-y-3">
                     <div className="px-1 py-2">
                       <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-1.5 mb-3">
-                        开发模式：输入任意邮箱即可登录
+                        请输入管理员分配的邮箱登录
                       </p>
                       <input
                         type="email"
