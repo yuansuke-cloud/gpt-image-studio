@@ -13,18 +13,24 @@ function ipInCidr(ip: string, cidr: string): boolean {
 
 const ALLOWED_CIDRS = ["192.168.2.0/24", "192.168.3.0/24"];
 
+// 本地开发 / Vercel 代理下不限制
+const BYPASS_IPS = ["::1", "127.0.0.1", "0.0.0.0"];
+
 export default withAuth(
   function middleware(req) {
     const token = req.nextauth.token;
-    const path = req.nextUrl.pathname;
 
     if (token?.role === "ADMIN") {
       return NextResponse.next();
     }
 
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-      || req.headers.get("x-real-ip")
-      || "0.0.0.0";
+    const forwarded = req.headers.get("x-forwarded-for") || "";
+    const realIp = req.headers.get("x-real-ip") || "";
+    const ip = forwarded.split(",")[0]?.trim() || realIp || "";
+
+    if (!ip || BYPASS_IPS.includes(ip)) {
+      return NextResponse.next();
+    }
 
     const allowed = ALLOWED_CIDRS.some((cidr) => ipInCidr(ip, cidr));
     if (!allowed) {
