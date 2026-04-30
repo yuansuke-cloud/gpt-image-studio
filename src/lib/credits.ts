@@ -4,18 +4,13 @@ import { prisma } from "./prisma";
 import { calculateCredits } from "./openai";
 
 /**
- * 预扣额度（生图前调用）
- * 使用数据库事务保证原子性
- * @returns 扣除后的余额，如果余额不足返回 null
+ * 扣除额度（生图成功后调用）
  */
 export async function deductCredits(
   userId: string,
-  quality: string,
-  n: number,
+  cost: number,
   generationId: string
 ): Promise<number | null> {
-  const cost = calculateCredits(quality, n);
-
   return await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
@@ -23,7 +18,7 @@ export async function deductCredits(
     });
 
     if (!user || user.creditsBalance < cost) {
-      return null; // 余额不足
+      return null;
     }
 
     const newBalance = user.creditsBalance - cost;
@@ -39,7 +34,7 @@ export async function deductCredits(
         delta: -cost,
         balanceAfter: newBalance,
         reason: "GENERATION",
-        description: `生图消耗 ${cost} 额度（${quality} × ${n}）`,
+        description: `生图消耗 ${cost} 额度`,
         generationId,
       },
     });

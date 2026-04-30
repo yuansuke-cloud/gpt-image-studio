@@ -4,13 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateImages, editImage, calculateCost, calculateCredits } from "@/lib/openai";
-import { uploadBase64Image } from "@/lib/storage";
-import { deductCredits, refundCredits } from "@/lib/credits";
+import { generateImages, calculateCost, calculateCredits } from "@/lib/openai";
+import { deductCredits } from "@/lib/credits";
 import { checkRateLimit, generateRateLimit } from "@/lib/rate-limit";
 import type { GenerateRequest } from "@/types";
-import fsPromises from "fs/promises";
-import path from "path";
 
 /**
  * 后台执行生图任务（fire-and-forget）
@@ -25,11 +22,10 @@ async function processGeneration(params: {
   n: number;
   format: string;
   background: string;
-  referenceImageId?: string | null;
 }) {
   const {
     generationId, userId, prompt, quality, size,
-    resolution, n, format, background, referenceImageId,
+    resolution, n, format, background,
   } = params;
 
   try {
@@ -57,13 +53,15 @@ async function processGeneration(params: {
       }
     }
 
+    const cost = calculateCredits(quality, n);
+    await deductCredits(userId, cost, generationId);
+
     await prisma.generation.update({
       where: { id: generationId },
-      data: { status: "COMPLETED", completedAt: new Date() },
+      data: { status: "COMPLETED", completedAt: new Date(), costCredits: cost },
     });
   } catch (err: any) {
     console.error("Background generation failed:", err);
-    await refundCredits(userId, quality, n, generationId).catch(console.error);
 
     const errorMap: Record<string, string> = {
       content_policy_violation: "图片内容违反安全策略，请修改描述后重试",
@@ -76,7 +74,7 @@ async function processGeneration(params: {
 
     await prisma.generation.update({
       where: { id: generationId },
-      data: { status: "FAILED", error: userMessage },
+      data: { status: "FAILED", error: userMessage, costCredits: 0 },
     }).catch(console.error);
   }
 }
@@ -137,40 +135,25 @@ export async function POST(req: NextRequest) {
         format: format.toUpperCase() as any,
         background: background.toUpperCase() as any,
         status: "PENDING",
-        costCredits,
+        costCredits: 0,
         costUsd,
         referenceImageId: referenceImageId || null,
       },
     });
 
-    // 6. 预扣额度
-    const newBalance = await deductCredits(userId, quality, n, generation.id);
-    if (newBalance === null) {
-      await prisma.generation.update({
-        where: { id: generation.id },
-        data: { status: "FAILED", error: "额度不足" },
-      });
-      return NextResponse.json(
-        { error: "额度不足", creditsRequired: costCredits },
-        { status: 402 }
-      );
-    }
-
-    // 7. 后台异步执行生图（不阻塞响应）
+    // 6. 后台异步执行生图（不阻塞响应），完成后再扣额度
     processGeneration({
       generationId: generation.id,
       userId,
       prompt: prompt.trim(),
       quality, size, resolution, n, format, background,
-      referenceImageId,
     }).catch(console.error);
 
-    // 8. 立即返回任务 ID，前端轮询状态
+    // 7. 立即返回任务 ID，前端轮询状态
     return NextResponse.json({
       generationId: generation.id,
       status: "PENDING",
       creditsUsed: costCredits,
-      creditsRemaining: newBalance,
     });
   } catch (error: any) {
     console.error("Generate API error:", error);
